@@ -2,6 +2,7 @@ import datetime
 import os
 import subprocess
 import tempfile
+import time
 import urllib.parse
 import webbrowser
 import re
@@ -30,6 +31,32 @@ MAX_HISTORY = 30
 CONFIDENCE_THRESHOLD = 0.58
 
 RANDOM_SEED = 42
+
+# ============================================================
+# ПУТИ И ПРИЛОЖЕНИЯ
+# ============================================================
+
+# Steam обычно устанавливается сюда.
+# При необходимости замени путь на свой.
+STEAM_EXE = os.getenv(
+    "STEAM_EXE",
+    r"C:\Program Files (x86)\Steam\steam.exe"
+)
+
+DISCORD_EXE = os.getenv(
+    "DISCORD_EXE",
+    r"%LOCALAPPDATA%\Discord\Update.exe"
+)
+
+# +++ ДОБАВЛЕНО: путь к Яндекс Музыке +++
+YANDEX_MUSIC_EXE = os.getenv(
+    "YANDEX_MUSIC_EXE",
+    r"%LOCALAPPDATA%\Programs\YandexMusic\Яндекс Музыка.exe"
+)
+# +++ КОНЕЦ ДОБАВЛЕНИЯ +++
+
+# ID приложения Dota 2 в Steam.
+DOTA2_APP_ID = "570"
 
 
 # ============================================================
@@ -383,6 +410,85 @@ class MiniNeuralNetwork:
                 "зайди на ютуб",
                 "покажи ютуб"
             ],
+
+            # =================================================
+            # STEAM
+            # =================================================
+
+            "open_steam": [
+                "открой стим",
+                "запусти стим",
+                "открой steam",
+                "запусти steam",
+                "запусти стим пожалуйста",
+                "открой мне стим"
+            ],
+
+            # =================================================
+            # DOTA 2
+            # =================================================
+
+            "open_dota2": [
+                "открой доту",
+                "запусти доту",
+                "открой dota",
+                "запусти dota",
+                "запусти dota 2",
+                "запусти дота 2",
+                "открой дота 2"
+            ],
+
+            # =================================================
+            # DISCORD
+            # =================================================
+
+            "open_discord": [
+                "открой дискорд",
+                "запусти дискорд",
+                "открой discord",
+                "запусти discord",
+                "запусти мне дискорд",
+                "открой мне дискорд"
+            ],
+
+            # +++ ДОБАВЛЕНО: интенты Яндекс Музыки +++
+
+            # =================================================
+            # ЯНДЕКС МУЗЫКА (ОТКРЫТИЕ)
+            # =================================================
+
+            "open_yandex_music": [
+                "открой яндекс музыку",
+                "запусти яндекс музыку",
+                "открой яндекс музыка",
+                "запусти яндекс музыка",
+                "включи яндекс музыку",
+                "открой я музыку",
+                "запусти я музыку",
+                "открой яндекс мьюзик",
+                "запусти яндекс мьюзик",
+                "мне нужна яндекс музыка",
+                "открой музыку яндекс",
+                "яндекс музыка"
+            ],
+
+            # =================================================
+            # ЯНДЕКС МУЗЫКА (ПОИСК ТРЕКА)
+            # =================================================
+
+            "yandex_music_search": [
+                "включи в яндекс музыке",
+                "найди в яндекс музыке",
+                "включи песню в яндекс музыке",
+                "включи трек в яндекс музыке",
+                "поищи в яндекс музыке",
+                "включи песню",
+                "включи трек",
+                "включи капсайз",
+                "включи медкид"
+            ],
+
+            # +++ КОНЕЦ ДОБАВЛЕНИЯ +++
 
             # =================================================
             # ПОИСК
@@ -1230,91 +1336,96 @@ class Jarvis:
 
     def speak(self, text: str):
         """
-        Озвучивает ответ через pyttsx3 + SAPI5.
-
-        Важное отличие:
-        новый engine создаётся на каждый ответ.
-        Это устраняет ситуации, когда предыдущая очередь
-        pyttsx3/SAPI5 остаётся в некорректном состоянии.
+        Надёжная озвучка JARVIS через Windows SAPI5.
+        Использует русский голос Microsoft Irina Desktop, если он найден.
         """
         text = str(text).strip()
 
         if not text:
             return False
 
-        print(
-            f"\n🤖 JARVIS: {text}"
-        )
+        print(f"\n🤖 JARVIS: {text}")
 
         engine = None
 
         try:
+            # Создаём SAPI5 engine так же, как в отдельном
+            # тесте, который успешно нашёл голоса.
             engine = pyttsx3.init("sapi5")
 
-            engine.setProperty(
-                "rate",
-                self.voice_rate
-            )
+            engine.setProperty("rate", 175)
+            engine.setProperty("volume", 1.0)
 
-            engine.setProperty(
-                "volume",
-                self.voice_volume
-            )
+            voices = engine.getProperty("voices") or []
 
-            if self.voice_id:
+            selected_voice = None
+
+            for voice in voices:
+                voice_id = str(
+                    getattr(voice, "id", "")
+                ).lower()
+
+                voice_name = str(
+                    getattr(voice, "name", "")
+                ).lower()
+
+                voice_languages = str(
+                    getattr(voice, "languages", "")
+                ).lower()
+
+                info = (
+                    voice_id
+                    + " "
+                    + voice_name
+                    + " "
+                    + voice_languages
+                )
+
+                if (
+                    "irina" in info
+                    or "russian" in info
+                    or "ru-ru" in info
+                    or "ru_ru" in info
+                    or "рус" in info
+                ):
+                    selected_voice = voice
+                    break
+
+            if selected_voice is not None:
                 engine.setProperty(
                     "voice",
-                    self.voice_id
+                    selected_voice.id
                 )
 
-            started = {"value": False}
-            finished = {"value": False}
-
-            def on_start(name):
-                started["value"] = True
-                print("🔊 SAPI5 начал озвучивание.")
-
-            def on_end(name, completed):
-                finished["value"] = bool(completed)
                 print(
-                    f"🔊 SAPI5 завершил озвучивание: "
-                    f"{completed}"
+                    "🔊 Голос: "
+                    f"{getattr(selected_voice, 'name', selected_voice.id)}"
+                )
+            elif voices:
+                engine.setProperty(
+                    "voice",
+                    voices[0].id
                 )
 
-            try:
-                engine.connect(
-                    "started-utterance",
-                    on_start
+                print(
+                    "⚠️ Русский голос не найден. "
+                    f"Использую: {getattr(voices[0], 'name', voices[0].id)}"
                 )
+            else:
+                print("❌ Голоса SAPI5 не найдены.")
+                return False
 
-                engine.connect(
-                    "finished-utterance",
-                    on_end
-                )
-            except Exception:
-                pass
+            print("🔊 Озвучиваю...")
 
             engine.say(text)
             engine.runAndWait()
 
-            if not started["value"]:
-                print(
-                    "⚠️ pyttsx3 не сообщил о начале озвучивания."
-                )
-
-            elif finished["value"]:
-                print("✅ Ответ действительно обработан SAPI5.")
-
-            else:
-                print(
-                    "⚠️ SAPI5 завершил обработку без подтверждения."
-                )
-
+            print("✅ Ответ озвучен.")
             return True
 
         except Exception as error:
             print(
-                f"❌ Ошибка pyttsx3/SAPI5: {error}"
+                f"❌ Ошибка озвучки SAPI5: {error}"
             )
             return False
 
@@ -1327,14 +1438,14 @@ class Jarvis:
 
     def test_voice(self):
         """
-        Отдельная проверка голосового движка.
+        Проверяет ровно тот же механизм, который используется
+        для обычных ответов JARVIS.
         """
-        print(
-            "\n🔊 Тестирую голосовой ответ..."
-        )
+        print("\n🔊 Проверка голоса JARVIS...")
 
         return self.speak(
-            "Проверка. Если вы слышите этот текст, голосовой ответ работает."
+            "Проверка. Я Джарвис. "
+            "Теперь я должен озвучивать каждый свой ответ."
         )
 
     def remember(
@@ -1588,6 +1699,313 @@ class Jarvis:
                 except Exception:
 
                     pass
+
+    # ========================================================
+    # STEAM
+    # ========================================================
+
+    def open_steam(self):
+        """
+        Запускает Steam.
+        Сначала пробуем steam.exe, затем steam://open/main.
+        """
+        try:
+            steam_path = os.path.expandvars(STEAM_EXE)
+
+            if os.path.exists(steam_path):
+                subprocess.Popen(
+                    [steam_path],
+                    shell=False
+                )
+            else:
+                if not self.open_url("steam://open/main"):
+                    self.speak(
+                        "Не удалось запустить Steam."
+                    )
+                    return False
+
+            self.speak(
+                "Steam успешно запущен."
+            )
+            return True
+
+        except Exception as error:
+            print(
+                f"❌ Ошибка Steam: {error}"
+            )
+
+            if self.open_url("steam://open/main"):
+                self.speak(
+                    "Steam успешно запущен."
+                )
+                return True
+
+            self.speak(
+                "Не удалось запустить Steam."
+            )
+            return False
+
+    # ========================================================
+    # DOTA 2
+    # ========================================================
+
+    def open_dota2(self):
+        """
+        Запускает Dota 2 через Steam.
+        """
+        try:
+            if self.open_url("steam://rungameid/570"):
+                self.speak(
+                    "Dota 2 запускается."
+                )
+                return True
+
+            self.speak(
+                "Не удалось запустить Dota 2."
+            )
+            return False
+
+        except Exception as error:
+            print(
+                f"❌ Ошибка Dota 2: {error}"
+            )
+
+            self.speak(
+                "Не удалось запустить Dota 2."
+            )
+            return False
+
+    # ========================================================
+    # DISCORD
+    # ========================================================
+
+    def open_discord(self):
+        """
+        Запускает Discord:
+        1. через Discord Update.exe;
+        2. через discord://;
+        3. через обычный запуск ярлыка/протокола Windows.
+        """
+        try:
+            discord_path = os.path.expandvars(DISCORD_EXE)
+
+            if os.path.exists(discord_path):
+                subprocess.Popen(
+                    [discord_path, "--processStart", "Discord.exe"],
+                    shell=False
+                )
+                self.speak(
+                    "Discord успешно запущен."
+                )
+                return True
+
+            if self.open_url("discord://"):
+                self.speak(
+                    "Discord успешно запущен."
+                )
+                return True
+
+            self.speak(
+                "Не удалось запустить Discord."
+            )
+            return False
+
+        except Exception as error:
+            print(
+                f"❌ Ошибка Discord: {error}"
+            )
+
+            if self.open_url("discord://"):
+                self.speak(
+                    "Discord успешно запущен."
+                )
+                return True
+
+            self.speak(
+                "Не удалось запустить Discord."
+            )
+            return False
+
+    # +++ ДОБАВЛЕНО: методы Яндекс Музыки (через приложение) +++
+
+    # ========================================================
+    # ЯНДЕКС МУЗЫКА (ЗАПУСК ПРИЛОЖЕНИЯ)
+    # ========================================================
+
+    def open_yandex_music(self):
+        """
+        Открывает ПРИЛОЖЕНИЕ Яндекс Музыки.
+        Браузер не используется.
+        """
+        try:
+            music_path = os.path.expandvars(YANDEX_MUSIC_EXE)
+
+            if os.path.exists(music_path):
+                subprocess.Popen(
+                    [music_path],
+                    shell=False
+                )
+                self.speak(
+                    "Яндекс Музыка запущена."
+                )
+                return True
+
+            # Если .exe по указанному пути нет — пробуем
+            # через зарегистрированный deep-link.
+            # os.startfile передаёт URI системе, которая
+            # откроет его приложением, а не браузером.
+            try:
+                os.startfile("yandexmusic://")
+                self.speak(
+                    "Яндекс Музыка запущена."
+                )
+                return True
+
+            except Exception as deep_error:
+                print(
+                    f"❌ Deep-link yandexmusic:// "
+                    f"не сработал: {deep_error}"
+                )
+
+            self.speak(
+                "Не удалось запустить Яндекс Музыку. "
+                "Проверь путь к приложению."
+            )
+            return False
+
+        except Exception as error:
+            print(
+                f"❌ Ошибка Яндекс Музыки: {error}"
+            )
+
+            self.speak(
+                "Не удалось запустить Яндекс Музыку."
+            )
+            return False
+
+    # ========================================================
+    # ПОИСК ТРЕКА В ЯНДЕКС МУЗЫКЕ (ЧЕРЕЗ ПРИЛОЖЕНИЕ)
+    # ========================================================
+
+    def yandex_music_search(
+        self,
+        query
+    ):
+        """
+        Открывает трек в ПРИЛОЖЕНИИ Яндекс Музыки.
+        Браузер не используется.
+        """
+        query = query.strip()
+
+        if not query:
+
+            return self.open_yandex_music()
+
+        # 1. Запускаем приложение, если оно ещё не запущено.
+        music_path = os.path.expandvars(YANDEX_MUSIC_EXE)
+
+        if os.path.exists(music_path):
+
+            try:
+
+                subprocess.Popen(
+                    [music_path],
+                    shell=False
+                )
+
+                # Даём приложению время подняться,
+                # чтобы оно успело принять deep-link.
+                time.sleep(2)
+
+            except Exception as error:
+
+                print(
+                    f"❌ Не удалось запустить "
+                    f"Яндекс Музыку: {error}"
+                )
+
+        # 2. Передаём поисковый запрос через deep-link.
+        #    os.startfile отправит URI системе, и Windows
+        #    откроет его в приложении Яндекс Музыки.
+        encoded = urllib.parse.quote(query)
+
+        deep_links = [
+
+            f"yandexmusic://search?text={encoded}",
+
+            f"yandexmusic://search/{encoded}"
+
+        ]
+
+        for url in deep_links:
+
+            try:
+
+                os.startfile(url)
+
+                self.speak(
+                    f"Включаю {query} в Яндекс Музыке."
+                )
+                return True
+
+            except Exception as error:
+
+                print(
+                    f"❌ Deep-link {url} "
+                    f"не сработал: {error}"
+                )
+
+        # 3. Если ни один deep-link не сработал,
+        #    приложение всё равно уже открыто.
+        self.speak(
+            f"Яндекс Музыка открыта. "
+            f"Похоже, приложение не принимает "
+            f"поисковый запрос автоматически — "
+            f"найди {query} вручную."
+        )
+        return True
+
+    def extract_yandex_music_query(
+        self,
+        command
+    ):
+        """
+        Достаёт название трека из фразы:
+          'включи капсайз' -> 'капсайз'
+          'включи в яндекс музыке медкид' -> 'медкид'
+        """
+        prefixes = [
+            "включи в яндекс музыке ",
+            "включи в яндекс музыка ",
+            "включи в яндекс мьюзик ",
+            "включи в я музыке ",
+            "найди в яндекс музыке ",
+            "найди в яндекс музыка ",
+            "найди в яндекс мьюзик ",
+            "поищи в яндекс музыке ",
+            "поищи в яндекс музыка ",
+            "включи песню в яндекс музыке ",
+            "включи трек в яндекс музыке ",
+            "включи песню ",
+            "включи трек ",
+            "включи "
+        ]
+
+        for prefix in prefixes:
+
+            if command.startswith(
+                prefix
+            ):
+
+                return (
+                    command[
+                        len(prefix):
+                    ].strip()
+                )
+
+        return ""
+
+    # +++ КОНЕЦ ДОБАВЛЕНИЯ +++
 
     # ========================================================
     # ОТКРЫТИЕ URL
@@ -2327,6 +2745,172 @@ class Jarvis:
                 print(f"❌ Ошибка настроек: {error}")
 
             return True
+
+        # ====================================================
+        # STEAM
+        # ====================================================
+
+        if (
+            "открой стим" in command
+            or
+            "запусти стим" in command
+            or
+            "открой steam" in command
+            or
+            "запусти steam" in command
+            or
+            command == "steam"
+        ):
+            self.open_steam()
+            return True
+
+        # ====================================================
+        # DOTA 2
+        # ====================================================
+
+        if (
+            "открой доту" in command
+            or
+            "запусти доту" in command
+            or
+            "открой dota" in command
+            or
+            "запусти dota" in command
+            or
+            "запусти dota 2" in command
+            or
+            command == "дота 2"
+            or
+            command == "dota 2"
+        ):
+            self.open_dota2()
+            return True
+
+        # ====================================================
+        # DISCORD
+        # ====================================================
+
+        if (
+            "открой дискорд" in command
+            or
+            "запусти дискорд" in command
+            or
+            "открой discord" in command
+            or
+            "запусти discord" in command
+            or
+            command == "discord"
+        ):
+            self.open_discord()
+            return True
+
+        # +++ ДОБАВЛЕНО: блок Яндекс Музыки в execute() +++
+
+        # ====================================================
+        # ЯНДЕКС МУЗЫКА
+        # ====================================================
+
+        yandex_music_indicators = [
+            "яндекс музыка",
+            "яндекс музыку",
+            "яндекс музыке",
+            "яндекс мьюзик",
+            "я музыка",
+            "я музыку",
+            "я музыке"
+        ]
+
+        yandex_music_service_words = [
+            "блокнот",
+            "калькулятор",
+            "проводник",
+            "браузер",
+            "интернет",
+            "гугл",
+            "google",
+            "стим",
+            "steam",
+            "доту",
+            "dota",
+            "дискорд",
+            "discord",
+            "настройк",
+            "консоль",
+            "cmd",
+            "командн",
+            "загрузк",
+            "диспетчер"
+        ]
+
+        # 1) Явно указана Яндекс Музыка — ищем трек
+        #    или просто открываем приложение.
+        if any(
+            indicator in command
+            for indicator in yandex_music_indicators
+        ):
+
+            query = self.extract_yandex_music_query(
+                command
+            )
+
+            if query:
+
+                self.yandex_music_search(
+                    query
+                )
+
+            else:
+
+                self.open_yandex_music()
+
+            return True
+
+        # 2) Общий шаблон "включи <трек>" — по умолчанию
+        #    уходит в Яндекс Музыку.
+        if command.startswith(
+            "включи "
+        ):
+
+            rest = command[
+                len("включи "):
+            ].strip()
+
+            # Эти фразы должны уйти ниже в YouTube-блок.
+            if (
+                "ютуб" in command
+                or
+                "youtube" in command
+                or
+                rest == "видео"
+            ):
+
+                pass
+
+            # "включи музыку" — просто открыть Яндекс Музыку.
+            elif rest in (
+                "музыку",
+                "музыка",
+                "музыки"
+            ):
+
+                self.open_yandex_music()
+                return True
+
+            # Иначе — ищем трек в Яндекс Музыке.
+            elif (
+                rest
+                and not any(
+                    sw in command
+                    for sw in yandex_music_service_words
+                )
+            ):
+
+                self.yandex_music_search(
+                    rest
+                )
+                return True
+
+        # +++ КОНЕЦ ДОБАВЛЕНИЯ +++
 
         # ====================================================
         # БРАУЗЕР
