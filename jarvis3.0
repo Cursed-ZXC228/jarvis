@@ -6,6 +6,7 @@ import urllib.parse
 import webbrowser
 import re
 import random
+import winsound
 
 import numpy as np
 
@@ -449,12 +450,19 @@ class MiniNeuralNetwork:
             "shutdown": [
                 "выключись",
                 "заверши работу",
-                "закройся",
-                "выключи себя",
+                "завершение работы",
+                "завершение работ",
+                "закончи работу",
+                "закончить работу",
                 "заверши программу",
+                "закройся",
+                "закрой джарвиса",
+                "выключи себя",
+                "выключи джарвиса",
                 "закрой программу",
                 "останови работу",
-                "выключи джарвиса"
+                "останови джарвиса",
+                "заверши работу джарвис"
             ],
 
             # =================================================
@@ -1114,88 +1122,11 @@ class Jarvis:
             "\n🔊 Загружаю голосовой движок..."
         )
 
-        try:
+        self.voice_rate = 175
+        self.voice_volume = 1.0
+        self.voice_id = None
 
-            self.engine = pyttsx3.init()
-
-            self.engine.setProperty(
-                "rate",
-                175
-            )
-
-            self.engine.setProperty(
-                "volume",
-                1.0
-            )
-
-            voices = (
-                self.engine.getProperty(
-                    "voices"
-                )
-            )
-
-            russian_voice = None
-
-            for voice in voices:
-
-                voice_data = (
-                    f"{voice.id} "
-                    f"{voice.name} "
-                    f"{getattr(voice, 'languages', '')}"
-                ).lower()
-
-                if (
-                    "russian"
-                    in voice_data
-                    or "ru-ru"
-                    in voice_data
-                    or "ru_ru"
-                    in voice_data
-                    or "рус"
-                    in voice_data
-                ):
-
-                    russian_voice = voice
-
-                    break
-
-            if russian_voice:
-
-                self.engine.setProperty(
-                    "voice",
-                    russian_voice.id
-                )
-
-                print(
-                    f"🇷🇺 Русский голос: "
-                    f"{russian_voice.name}"
-                )
-
-            else:
-
-                print(
-                    "⚠️ Русский голос не найден."
-                )
-
-                print(
-                    "\nДоступные голоса:"
-                )
-
-                for voice in voices:
-
-                    print(
-                        f"  • {voice.id} "
-                        f"— {voice.name}"
-                    )
-
-        except Exception as error:
-
-            print(
-                f"❌ Ошибка голосового "
-                f"движка: {error}"
-            )
-
-            self.engine = None
+        self._setup_voice()
 
         # ====================================================
         # ПАМЯТЬ
@@ -1213,39 +1144,198 @@ class Jarvis:
     # ГОВОРИМ
     # ========================================================
 
-    def speak(
-        self,
-        text: str
-    ):
+    def _setup_voice(self):
+        """
+        Инициализирует pyttsx3 через SAPI5 и выбирает русский голос.
+        Каждый вызов speak() создаёт отдельный короткоживущий engine,
+        чтобы избежать проблем с очередью/состоянием SAPI5.
+        """
+        try:
+            test_engine = pyttsx3.init("sapi5")
+
+            test_engine.setProperty(
+                "rate",
+                self.voice_rate
+            )
+
+            test_engine.setProperty(
+                "volume",
+                self.voice_volume
+            )
+
+            voices = test_engine.getProperty("voices") or []
+
+            print(
+                f"🔊 Найдено голосов Windows: {len(voices)}"
+            )
+
+            russian_voice = None
+
+            for voice in voices:
+                info = " ".join(
+                    [
+                        str(getattr(voice, "id", "")),
+                        str(getattr(voice, "name", "")),
+                        str(getattr(voice, "languages", "")),
+                    ]
+                ).lower()
+
+                if (
+                    "russian" in info
+                    or "ru-ru" in info
+                    or "ru_ru" in info
+                    or "ru_" in info
+                    or "рус" in info
+                ):
+                    russian_voice = voice
+                    break
+
+            if russian_voice is not None:
+                self.voice_id = russian_voice.id
+
+                print(
+                    f"🇷🇺 Русский голос: "
+                    f"{getattr(russian_voice, 'name', russian_voice.id)}"
+                )
+
+            elif voices:
+                self.voice_id = voices[0].id
+
+                print(
+                    "⚠️ Русский голос не найден. "
+                    f"Использую: {getattr(voices[0], 'name', voices[0].id)}"
+                )
+
+            else:
+                self.voice_id = None
+                print("❌ Windows не вернул список голосов.")
+
+            # Закрываем только тестовый engine.
+            try:
+                test_engine.stop()
+            except Exception:
+                pass
+
+            print("✅ Голосовой движок pyttsx3 готов.")
+            return True
+
+        except Exception as error:
+            self.voice_id = None
+
+            print(
+                f"❌ Ошибка запуска pyttsx3/SAPI5: {error}"
+            )
+
+            return False
+
+    def speak(self, text: str):
+        """
+        Озвучивает ответ через pyttsx3 + SAPI5.
+
+        Важное отличие:
+        новый engine создаётся на каждый ответ.
+        Это устраняет ситуации, когда предыдущая очередь
+        pyttsx3/SAPI5 остаётся в некорректном состоянии.
+        """
+        text = str(text).strip()
+
+        if not text:
+            return False
 
         print(
             f"\n🤖 JARVIS: {text}"
         )
 
-        if self.engine is None:
-
-            return
+        engine = None
 
         try:
+            engine = pyttsx3.init("sapi5")
 
-            self.engine.stop()
-
-            self.engine.say(
-                text
+            engine.setProperty(
+                "rate",
+                self.voice_rate
             )
 
-            self.engine.runAndWait()
+            engine.setProperty(
+                "volume",
+                self.voice_volume
+            )
+
+            if self.voice_id:
+                engine.setProperty(
+                    "voice",
+                    self.voice_id
+                )
+
+            started = {"value": False}
+            finished = {"value": False}
+
+            def on_start(name):
+                started["value"] = True
+                print("🔊 SAPI5 начал озвучивание.")
+
+            def on_end(name, completed):
+                finished["value"] = bool(completed)
+                print(
+                    f"🔊 SAPI5 завершил озвучивание: "
+                    f"{completed}"
+                )
+
+            try:
+                engine.connect(
+                    "started-utterance",
+                    on_start
+                )
+
+                engine.connect(
+                    "finished-utterance",
+                    on_end
+                )
+            except Exception:
+                pass
+
+            engine.say(text)
+            engine.runAndWait()
+
+            if not started["value"]:
+                print(
+                    "⚠️ pyttsx3 не сообщил о начале озвучивания."
+                )
+
+            elif finished["value"]:
+                print("✅ Ответ действительно обработан SAPI5.")
+
+            else:
+                print(
+                    "⚠️ SAPI5 завершил обработку без подтверждения."
+                )
+
+            return True
 
         except Exception as error:
-
             print(
-                f"❌ Ошибка синтеза речи: "
-                f"{error}"
+                f"❌ Ошибка pyttsx3/SAPI5: {error}"
             )
+            return False
 
-    # ========================================================
-    # СОХРАНЕНИЕ В ПАМЯТЬ
-    # ========================================================
+        finally:
+            if engine is not None:
+                try:
+                    engine.stop()
+                except Exception:
+                    pass
+
+    def test_voice(self):
+        """
+        Отдельная проверка голосового движка.
+        """
+        print(
+            "\n🔊 Тестирую голосовой ответ..."
+        )
+
+        return self.speak(
+            "Проверка. Если вы слышите этот текст, голосовой ответ работает."
+        )
 
     def remember(
         self,
@@ -1510,11 +1600,12 @@ class Jarvis:
 
         try:
 
-            webbrowser.open(
-                url
-            )
+            opened = webbrowser.open(url)
 
-            return True
+            if opened:
+                return True
+
+            return False
 
         except Exception as error:
 
@@ -1539,25 +1630,29 @@ class Jarvis:
         if not query:
 
             self.speak(
-                "Что именно мне найти?"
+                "Я не понял, что именно нужно найти."
             )
 
-            return
-
-        self.speak(
-            f"Ищу {query}."
-        )
+            return False
 
         url = (
             "https://www.google.com/search?q="
-            + urllib.parse.quote(
-                query
-            )
+            + urllib.parse.quote(query)
         )
 
-        self.open_url(
-            url
+        if self.open_url(url):
+
+            self.speak(
+                f"Поиск {query} выполнен."
+            )
+
+            return True
+
+        self.speak(
+            f"Не удалось выполнить поиск {query}."
         )
+
+        return False
 
     # ========================================================
     # YOUTUBE ПОИСК
@@ -1573,25 +1668,29 @@ class Jarvis:
         if not query:
 
             self.speak(
-                "Что найти на YouTube?"
+                "Я не понял, что нужно найти на YouTube."
             )
 
-            return
-
-        self.speak(
-            f"Ищу {query} на YouTube."
-        )
+            return False
 
         url = (
             "https://www.youtube.com/results?search_query="
-            + urllib.parse.quote(
-                query
-            )
+            + urllib.parse.quote(query)
         )
 
-        self.open_url(
-            url
+        if self.open_url(url):
+
+            self.speak(
+                f"Поиск {query} на YouTube выполнен."
+            )
+
+            return True
+
+        self.speak(
+            f"Не удалось выполнить поиск {query} на YouTube."
         )
+
+        return False
 
     # ========================================================
     # ИЗВЛЕЧЕНИЕ ПОИСКА
@@ -1679,7 +1778,6 @@ class Jarvis:
             "разделить": "/",
 
             "x": "*",
-
             "икс": "*",
 
             "равно": ""
@@ -1689,11 +1787,9 @@ class Jarvis:
             replacements.items()
         ):
 
-            expression = (
-                expression.replace(
-                    word,
-                    symbol
-                )
+            expression = expression.replace(
+                word,
+                symbol
             )
 
         expression = re.sub(
@@ -1702,9 +1798,7 @@ class Jarvis:
             expression
         )
 
-        expression = (
-            expression.strip()
-        )
+        expression = expression.strip()
 
         if not expression:
 
@@ -1712,11 +1806,10 @@ class Jarvis:
                 "Я не смог понять пример."
             )
 
-            return
+            return False
 
         try:
 
-            # Ограничиваем eval только математикой
             result = eval(
                 expression,
                 {
@@ -1726,14 +1819,18 @@ class Jarvis:
             )
 
             self.speak(
-                f"Ответ: {result}"
+                f"Результат — {result}."
             )
+
+            return True
 
         except Exception:
 
             self.speak(
                 "Я не смог вычислить этот пример."
             )
+
+            return False
 
     # ========================================================
     # ПОГОДА
@@ -1743,16 +1840,24 @@ class Jarvis:
         self
     ):
 
-        self.speak(
-            "Открываю информацию о погоде."
+        url = (
+            "https://www.google.com/search?q="
+            + urllib.parse.quote("погода сегодня")
         )
 
-        self.open_url(
-            "https://www.google.com/search?q="
-            + urllib.parse.quote(
-                "погода сегодня"
+        if self.open_url(url):
+
+            self.speak(
+                "Информация о погоде открыта."
             )
+
+            return True
+
+        self.speak(
+            "Не удалось открыть информацию о погоде."
         )
+
+        return False
 
     # ========================================================
     # ВЫПОЛНЕНИЕ КОМАНД
@@ -1838,20 +1943,61 @@ class Jarvis:
         # ВЫКЛЮЧЕНИЕ
         # ====================================================
 
+        # ====================================================
+        # ЗАВЕРШЕНИЕ РАБОТЫ JARVIS
+        # ====================================================
+
+        shutdown_phrases = [
+            "выключись",
+            "выключи себя",
+            "выключи джарвиса",
+            "заверши работу",
+            "заверши программу",
+            "завершение работы",
+            "завершение работ",
+            "завершении работы",
+            "завершении работ",
+            "закончи работу",
+            "закончить работу",
+            "закройся",
+            "закрой джарвиса",
+            "закрой программу",
+            "останови работу",
+            "останови джарвиса"
+        ]
+
+        # Обычные точные фразы
         if any(
             phrase in command
-            for phrase in [
-                "выключись",
-                "заверши работу",
-                "заверши программу",
-                "выключи джарвиса"
-            ]
+            for phrase in shutdown_phrases
         ):
-
             self.speak(
-                "Хорошо. До встречи."
+                "Завершаю работу программы. До встречи."
             )
+            return False
 
+        # Если распознавание немного изменило окончание слова,
+        # например: "завершении работ" вместо "завершение работы".
+        if (
+            "заверш" in command
+            and "работ" in command
+        ):
+            self.speak(
+                "Завершаю работу программы. До встречи."
+            )
+            return False
+
+        # Если нейросеть уверенно определила shutdown,
+        # тоже завершаем программу.
+        predicted_intent, predicted_confidence = self.ai.predict(command)
+
+        if (
+            predicted_intent == "shutdown"
+            and predicted_confidence >= CONFIDENCE_THRESHOLD
+        ):
+            self.speak(
+                "Завершаю работу программы. До встречи."
+            )
             return False
 
         # ====================================================
@@ -1963,21 +2109,21 @@ class Jarvis:
             in command
         ):
 
-            self.speak(
-                "Открываю блокнот."
-            )
-
             try:
 
-                subprocess.Popen(
-                    "notepad.exe"
+                subprocess.Popen("notepad.exe")
+
+                self.speak(
+                    "Блокнот успешно запущен."
                 )
 
             except Exception as error:
 
                 self.speak(
-                    f"Не удалось открыть блокнот: {error}"
+                    "Не удалось запустить блокнот."
                 )
+
+                print(f"❌ Ошибка блокнота: {error}")
 
             return True
 
@@ -1990,21 +2136,21 @@ class Jarvis:
             in command
         ):
 
-            self.speak(
-                "Открываю калькулятор."
-            )
-
             try:
 
-                subprocess.Popen(
-                    "calc.exe"
+                subprocess.Popen("calc.exe")
+
+                self.speak(
+                    "Калькулятор успешно запущен."
                 )
 
             except Exception as error:
 
                 self.speak(
-                    f"Не удалось открыть калькулятор: {error}"
+                    "Не удалось запустить калькулятор."
                 )
+
+                print(f"❌ Ошибка калькулятора: {error}")
 
             return True
 
@@ -2026,21 +2172,21 @@ class Jarvis:
             in command
         ):
 
-            self.speak(
-                "Открываю проводник."
-            )
-
             try:
 
-                subprocess.Popen(
-                    "explorer.exe"
+                subprocess.Popen("explorer.exe")
+
+                self.speak(
+                    "Проводник успешно запущен."
                 )
 
             except Exception as error:
 
                 self.speak(
-                    f"Не удалось открыть проводник: {error}"
+                    "Не удалось запустить проводник."
                 )
+
+                print(f"❌ Ошибка проводника: {error}")
 
             return True
 
@@ -2059,10 +2205,6 @@ class Jarvis:
             in command
         ):
 
-            self.speak(
-                "Открываю загрузки."
-            )
-
             downloads = os.path.join(
                 os.path.expanduser("~"),
                 "Downloads"
@@ -2070,15 +2212,19 @@ class Jarvis:
 
             try:
 
-                os.startfile(
-                    downloads
+                os.startfile(downloads)
+
+                self.speak(
+                    "Папка загрузок успешно открыта."
                 )
 
             except Exception as error:
 
                 self.speak(
-                    f"Не удалось открыть загрузки: {error}"
+                    "Не удалось открыть папку загрузок."
                 )
+
+                print(f"❌ Ошибка загрузок: {error}")
 
             return True
 
@@ -2094,21 +2240,21 @@ class Jarvis:
             in command
         ):
 
-            self.speak(
-                "Открываю диспетчер задач."
-            )
-
             try:
 
-                subprocess.Popen(
-                    "taskmgr.exe"
+                subprocess.Popen("taskmgr.exe")
+
+                self.speak(
+                    "Диспетчер задач успешно запущен."
                 )
 
             except Exception as error:
 
                 self.speak(
-                    f"Не удалось открыть диспетчер задач: {error}"
+                    "Не удалось запустить диспетчер задач."
                 )
+
+                print(f"❌ Ошибка диспетчера задач: {error}")
 
             return True
 
@@ -2128,21 +2274,21 @@ class Jarvis:
             in command
         ):
 
-            self.speak(
-                "Открываю командную строку."
-            )
-
             try:
 
-                subprocess.Popen(
-                    "cmd.exe"
+                subprocess.Popen("cmd.exe")
+
+                self.speak(
+                    "Командная строка успешно запущена."
                 )
 
             except Exception as error:
 
                 self.speak(
-                    f"Не удалось открыть командную строку: {error}"
+                    "Не удалось запустить командную строку."
                 )
+
+                print(f"❌ Ошибка CMD: {error}")
 
             return True
 
@@ -2161,10 +2307,6 @@ class Jarvis:
             in command
         ):
 
-            self.speak(
-                "Открываю настройки Windows."
-            )
-
             try:
 
                 subprocess.Popen(
@@ -2172,11 +2314,17 @@ class Jarvis:
                     shell=True
                 )
 
+                self.speak(
+                    "Настройки Windows успешно открыты."
+                )
+
             except Exception as error:
 
                 self.speak(
-                    f"Не удалось открыть настройки: {error}"
+                    "Не удалось открыть настройки Windows."
                 )
+
+                print(f"❌ Ошибка настроек: {error}")
 
             return True
 
@@ -2198,13 +2346,19 @@ class Jarvis:
             in command
         ):
 
-            self.speak(
-                "Открываю браузер."
-            )
-
-            self.open_url(
+            if self.open_url(
                 "https://www.google.com"
-            )
+            ):
+
+                self.speak(
+                    "Браузер успешно открыт."
+                )
+
+            else:
+
+                self.speak(
+                    "Не удалось открыть браузер."
+                )
 
             return True
 
@@ -2223,13 +2377,19 @@ class Jarvis:
             in command
         ):
 
-            self.speak(
-                "Открываю YouTube."
-            )
-
-            self.open_url(
+            if self.open_url(
                 "https://www.youtube.com"
-            )
+            ):
+
+                self.speak(
+                    "YouTube успешно открыт."
+                )
+
+            else:
+
+                self.speak(
+                    "Не удалось открыть YouTube."
+                )
 
             return True
 
@@ -2395,6 +2555,14 @@ class Jarvis:
     # ========================================================
 
     def run(self):
+        # 🔊 Проверяем голос до запуска основного цикла.
+        voice_ok = self.test_voice()
+        if not voice_ok:
+            print("⚠️ JARVIS продолжит работу, но голос может быть недоступен.")
+        else:
+            print("✅ Голосовая система готова.")
+            self.speak("Голосовая система работает нормально.")
+
 
         if not self.show_microphone():
 
