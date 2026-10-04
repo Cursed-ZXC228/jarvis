@@ -1,0 +1,527 @@
+import datetime
+import os
+import subprocess
+import webbrowser
+import tempfile
+
+import sounddevice as sd
+import scipy.io.wavfile as wavfile
+import speech_recognition as sr
+import pyttsx3
+
+from dotenv import load_dotenv
+
+
+# =========================
+# НАСТРОЙКИ
+# =========================
+
+load_dotenv()
+
+JARVIS_NAME = os.getenv("JARVIS_NAME", "джарвис")
+
+# Сколько секунд максимум слушаем
+LISTEN_TIME = 7
+
+# Частота записи
+SAMPLE_RATE = 44100
+
+
+class Jarvis:
+
+    def __init__(self):
+
+        # Распознавание речи
+        self.recognizer = sr.Recognizer()
+
+        # Голос JARVIS
+        self.engine = pyttsx3.init()
+
+        self.engine.setProperty("rate", 175)
+        self.engine.setProperty("volume", 1.0)
+
+        # Ищем русский голос
+        voices = self.engine.getProperty("voices")
+
+        for voice in voices:
+
+            voice_data = (
+                f"{voice.id} {voice.name}"
+            ).lower()
+
+            if (
+                "russian" in voice_data
+                or "ru-" in voice_data
+                or "рус" in voice_data
+            ):
+                self.engine.setProperty(
+                    "voice",
+                    voice.id
+                )
+
+                print(
+                    f"Русский голос найден: {voice.name}"
+                )
+
+                break
+
+    # =========================
+    # ГОЛОС JARVIS
+    # =========================
+
+    def speak(self, text: str):
+
+        print(f"\n🤖 JARVIS: {text}")
+
+        self.engine.say(text)
+        self.engine.runAndWait()
+
+    # =========================
+    # ПРОВЕРКА МИКРОФОНА
+    # =========================
+
+    def show_microphone(self):
+
+        print("\n🎤 Проверяю микрофон...")
+
+        try:
+
+            microphone = sd.query_devices(
+                kind="input"
+            )
+
+            print(
+                f"Микрофон: {microphone['name']}"
+            )
+
+            print(
+                f"Каналов: {microphone['max_input_channels']}"
+            )
+
+            print(
+                "Микрофон найден успешно!\n"
+            )
+
+            return True
+
+        except Exception as error:
+
+            print(
+                f"❌ Ошибка микрофона: {error}"
+            )
+
+            return False
+
+    # =========================
+    # СЛУШАЕМ МИКРОФОН
+    # =========================
+
+    def listen(self):
+
+        print("\n🎙️ Я слушаю...")
+        print(
+            f"Говори в течение {LISTEN_TIME} секунд..."
+        )
+
+        try:
+
+            # Получаем устройство ввода
+            device = sd.query_devices(
+                kind="input"
+            )
+
+            channels = min(
+                device["max_input_channels"],
+                1
+            )
+
+            # Записываем звук
+            recording = sd.rec(
+                int(
+                    LISTEN_TIME
+                    * SAMPLE_RATE
+                ),
+                samplerate=SAMPLE_RATE,
+                channels=channels,
+                dtype="int16"
+            )
+
+            # Ждём окончания записи
+            sd.wait()
+
+            print("🔊 Запись закончена.")
+            print("🧠 Распознаю речь...")
+
+            # Временный WAV-файл
+            with tempfile.NamedTemporaryFile(
+                suffix=".wav",
+                delete=False
+            ) as temp_file:
+
+                filename = temp_file.name
+
+            # Сохраняем запись
+            wavfile.write(
+                filename,
+                SAMPLE_RATE,
+                recording
+            )
+
+            # Передаём WAV в SpeechRecognition
+            with sr.AudioFile(filename) as source:
+
+                audio = self.recognizer.record(
+                    source
+                )
+
+            # Удаляем временный файл
+            os.remove(filename)
+
+            # Распознаём русский язык
+            text = self.recognizer.recognize_google(
+                audio,
+                language="ru-RU"
+            )
+
+            print(f"\n👤 Ты: {text}")
+
+            return text.lower()
+
+        except sr.UnknownValueError:
+
+            print(
+                "❓ Я не смог разобрать речь."
+            )
+
+            return ""
+
+        except sr.RequestError as error:
+
+            print(
+                f"❌ Ошибка сервиса распознавания: {error}"
+            )
+
+            return ""
+
+        except Exception as error:
+
+            print(
+                f"❌ Ошибка микрофона: {error}"
+            )
+
+            return ""
+
+    # =========================
+    # КОМАНДЫ
+    # =========================
+
+    def execute(self, command: str):
+
+        if not command:
+            return True
+
+        # -------------------------
+        # ВЫХОД
+        # -------------------------
+
+        if any(
+            word in command
+            for word in [
+                "выключись",
+                "завершить работу",
+                "до свидания",
+                "пока"
+            ]
+        ):
+
+            self.speak(
+                "Хорошо. До встречи."
+            )
+
+            return False
+
+        # -------------------------
+        # ВРЕМЯ
+        # -------------------------
+
+        if (
+            "который час" in command
+            or "сколько времени" in command
+        ):
+
+            now = datetime.datetime.now()
+
+            self.speak(
+                f"Сейчас "
+                f"{now.hour} часов "
+                f"{now.minute} минут."
+            )
+
+            return True
+
+        # -------------------------
+        # ДАТА
+        # -------------------------
+
+        if (
+            "какое сегодня число"
+            in command
+            or
+            "какая сегодня дата"
+            in command
+        ):
+
+            today = datetime.datetime.now()
+
+            self.speak(
+                f"Сегодня "
+                f"{today.day} "
+                f"{today.strftime('%B')} "
+                f"{today.year} года."
+            )
+
+            return True
+
+        # -------------------------
+        # БЛОКНОТ
+        # -------------------------
+
+        if "открой блокнот" in command:
+
+            self.speak(
+                "Открываю блокнот."
+            )
+
+            subprocess.Popen(
+                "notepad.exe"
+            )
+
+            return True
+
+        # -------------------------
+        # КАЛЬКУЛЯТОР
+        # -------------------------
+
+        if "открой калькулятор" in command:
+
+            self.speak(
+                "Открываю калькулятор."
+            )
+
+            subprocess.Popen(
+                "calc.exe"
+            )
+
+            return True
+
+        # -------------------------
+        # ПРОВОДНИК
+        # -------------------------
+
+        if "открой проводник" in command:
+
+            self.speak(
+                "Открываю проводник."
+            )
+
+            subprocess.Popen(
+                "explorer.exe"
+            )
+
+            return True
+
+        # -------------------------
+        # БРАУЗЕР
+        # -------------------------
+
+        if "открой браузер" in command:
+
+            self.speak(
+                "Открываю браузер."
+            )
+
+            webbrowser.open(
+                "https://www.google.com"
+            )
+
+            return True
+
+        # -------------------------
+        # YOUTUBE
+        # -------------------------
+
+        if (
+            "открой ютуб" in command
+            or
+            "открой youtube" in command
+        ):
+
+            self.speak(
+                "Открываю YouTube."
+            )
+
+            webbrowser.open(
+                "https://www.youtube.com"
+            )
+
+            return True
+
+        # -------------------------
+        # ПОИСК GOOGLE
+        # -------------------------
+
+        if command.startswith("найди "):
+
+            query = command[
+                len("найди "):
+            ].strip()
+
+            if query:
+
+                self.speak(
+                    f"Ищу {query}."
+                )
+
+                url = (
+                    "https://www.google.com/search?q="
+                    + query.replace(" ", "+")
+                )
+
+                webbrowser.open(url)
+
+            return True
+
+        # -------------------------
+        # ПОИСК YOUTUBE
+        # -------------------------
+
+        if command.startswith("включи "):
+
+            query = command[
+                len("включи "):
+            ].strip()
+
+            if query:
+
+                self.speak(
+                    f"Ищу {query} на YouTube."
+                )
+
+                url = (
+                    "https://www.youtube.com/"
+                    + query.replace(" ", "+")
+                )
+
+                webbrowser.open(url)
+
+            return True
+
+        # -------------------------
+        # ПРИВЕТСТВИЕ
+        # -------------------------
+
+        if any(
+            word in command
+            for word in [
+                "привет",
+                "добрый день",
+                "доброе утро",
+                "добрый вечер"
+            ]
+        ):
+
+            self.speak(
+                "Здравствуйте. Я готов к работе."
+            )
+
+            return True
+
+        # -------------------------
+        # КТО ТЫ
+        # -------------------------
+
+        if "кто ты" in command:
+
+            self.speak(
+                "Я Джарвис, ваш голосовой помощник."
+            )
+
+            return True
+
+        # -------------------------
+        # НЕИЗВЕСТНАЯ КОМАНДА
+        # -------------------------
+
+        self.speak(
+            "Я пока не умею выполнять эту команду."
+        )
+
+        return True
+
+    # =========================
+    # ЗАПУСК JARVIS
+    # =========================
+
+    def run(self):
+
+        # Проверяем микрофон
+        if not self.show_microphone():
+
+            self.speak(
+                "Я не вижу микрофон."
+            )
+
+            return
+
+        self.speak(
+            "Система запущена. "
+            "Я готов к работе."
+        )
+
+        while True:
+
+            command = self.listen()
+
+            if not command:
+                continue
+
+            # Проверяем обращение к JARVIS
+            if JARVIS_NAME not in command:
+
+                print(
+                    "Фраза без обращения "
+                    "к Джарвису. Игнорирую."
+                )
+
+                continue
+
+            # Убираем слово "джарвис"
+            command = command.replace(
+                JARVIS_NAME,
+                ""
+            ).strip()
+
+            # Просто "Джарвис"
+            if not command:
+
+                self.speak(
+                    "Да, я слушаю."
+                )
+
+                continue
+
+            # Выполняем команду
+            if not self.execute(command):
+
+                break
+
+
+# =========================
+# ЗАПУСК
+# =========================
+
+if __name__ == "__main__":
+
+    jarvis = Jarvis()
+
+    jarvis.run()
